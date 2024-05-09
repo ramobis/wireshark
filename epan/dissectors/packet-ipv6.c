@@ -108,6 +108,7 @@ void proto_reg_handoff_ipv6(void);
 #define IP6IOAM_INC_TRACE               1       /* Incremental Trace */
 #define IP6IOAM_POT                     2       /* Proof of Transit */
 #define IP6IOAM_E2E                     3       /* Edge to Edge */
+#define IP6IOAM_AGGR                   32       /* Aggregation */
 
 /* IOAM Trace Types */
 #define IP6IOAM_TRACE_MASK_BIT0         (1 << 23) /* Hop_lim + Node ID */
@@ -328,6 +329,22 @@ static int hf_ipv6_opt_ioam_trace_node_undefined;
 static int hf_ipv6_opt_ioam_trace_node_oss_len;
 static int hf_ipv6_opt_ioam_trace_node_oss_scid;
 static int hf_ipv6_opt_ioam_trace_node_oss_data;
+static int hf_ipv6_opt_ioam_aggr_ns;
+static int hf_ipv6_opt_ioam_aggr_flags;
+static int hf_ipv6_opt_ioam_aggr_flag_1;
+static int hf_ipv6_opt_ioam_aggr_flag_2;
+static int hf_ipv6_opt_ioam_aggr_flag_3;
+static int hf_ipv6_opt_ioam_aggr_flag_4;
+static int hf_ipv6_opt_ioam_aggr_reserved;
+static int hf_ipv6_opt_ioam_aggr_data_param;
+static int hf_ipv6_opt_ioam_aggr_aggregator;
+static int hf_ipv6_opt_ioam_aggr_aggregator_sum;
+static int hf_ipv6_opt_ioam_aggr_aggregator_min;
+static int hf_ipv6_opt_ioam_aggr_aggregator_max;
+static int hf_ipv6_opt_ioam_aggr_aggregator_avg;
+static int hf_ipv6_opt_ioam_aggr_aggregate;
+static int hf_ipv6_opt_ioam_aggr_node_id;
+static int hf_ipv6_opt_ioam_aggr_hop_count;
 static int hf_ipv6_opt_tpf_information;
 static int hf_ipv6_opt_mipv6_home_address;
 static int hf_ipv6_opt_rpl_flag;
@@ -507,6 +524,8 @@ static gint ett_ipv6_opt_mpl;
 static gint ett_ipv6_opt_dff_flags;
 static gint ett_ipv6_opt_ioam_trace_flags;
 static gint ett_ipv6_opt_ioam_trace_types;
+static gint ett_ipv6_opt_ioam_aggr_flags;
+static gint ett_ipv6_opt_ioam_aggr_aggregators;
 static gint ett_ipv6_hopopts_proto;
 static gint ett_ipv6_fraghdr_proto;
 static gint ett_ipv6_routing_proto;
@@ -2046,6 +2065,7 @@ static const value_string ipv6_ioam_opt_types[] = {
     { IP6IOAM_INC_TRACE,  "Incremental Trace"   },
     { IP6IOAM_POT,        "Proof of Transit"    },
     { IP6IOAM_E2E,        "Edge to Edge"        },
+    { IP6IOAM_AGGR,       "Aggregation"         },
     { 0, NULL}
 };
 
@@ -2380,6 +2400,86 @@ dissect_opt_ioam_trace(tvbuff_t *tvb, gint offset, packet_info *pinfo,
 }
 
 /*
+ * IOAM Aggregation Option Header
+ *
+    0                   1                   2                   3
+    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |        Namespace-ID           | Flags |       Reserved        |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |               IOAM Data Param                 |  Aggregator   |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |                           Aggregate                           |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+   |            Auxil-data Node-ID                 |  Hop Count    |
+   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+*/
+static gint
+dissect_opt_ioam_aggr(tvbuff_t *tvb, gint offset, packet_info *pinfo,
+                       proto_tree *opt_tree, struct opt_proto_item *opt_ti, guint8 opt_len)
+{
+    static int * const ioam_aggr_flags[] = {
+        &hf_ipv6_opt_ioam_aggr_flag_1,
+        &hf_ipv6_opt_ioam_aggr_flag_2,
+        &hf_ipv6_opt_ioam_aggr_flag_3,
+        &hf_ipv6_opt_ioam_aggr_flag_4,
+        NULL
+    };
+
+    static int * const ioam_aggr_aggregators[] = {
+        &hf_ipv6_opt_ioam_aggr_aggregator_sum,
+        &hf_ipv6_opt_ioam_aggr_aggregator_min,
+        &hf_ipv6_opt_ioam_aggr_aggregator_max,
+        &hf_ipv6_opt_ioam_aggr_aggregator_avg,
+        NULL
+    };
+
+    if (opt_len != 18) {
+        expert_add_info_format(pinfo, opt_ti->len, &ei_ipv6_opt_invalid_len,
+                               "IOAM Option: Invalid length (%u bytes)", opt_len);
+    }
+
+    // Namespace
+    proto_tree_add_item(opt_tree, hf_ipv6_opt_ioam_aggr_ns, tvb, offset, 2, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    // Flags
+    proto_tree_add_bitmask(opt_tree, tvb, offset, hf_ipv6_opt_ioam_aggr_flags,
+                           ett_ipv6_opt_ioam_aggr_flags, ioam_aggr_flags, ENC_NA);
+
+    // Reserved
+    proto_tree_add_bits_item(opt_tree, hf_ipv6_opt_ioam_aggr_reserved, tvb,
+                                  offset*8+4, 12, ENC_BIG_ENDIAN);
+    offset += 2;
+
+    // IOAM Data Param
+    proto_tree_add_item(opt_tree, hf_ipv6_opt_ioam_aggr_data_param, tvb,
+                                  offset, 3, ENC_BIG_ENDIAN);
+    offset += 3;
+
+    // Aggregator
+    proto_tree_add_bitmask(opt_tree, tvb, offset, hf_ipv6_opt_ioam_aggr_aggregator,
+                           ett_ipv6_opt_ioam_aggr_aggregators, ioam_aggr_aggregators, ENC_NA);
+    offset += 1;
+
+    // Aggregate
+    proto_tree_add_item(opt_tree, hf_ipv6_opt_ioam_aggr_aggregate, tvb,
+                                  offset, 4, ENC_BIG_ENDIAN);
+    offset += 4;
+
+    // Auxil-data Node-ID
+    proto_tree_add_item(opt_tree, hf_ipv6_opt_ioam_aggr_node_id, tvb,
+                                  offset, 3, ENC_BIG_ENDIAN);
+    offset += 3;
+
+    // Hop Count
+    proto_tree_add_item(opt_tree, hf_ipv6_opt_ioam_aggr_hop_count, tvb,
+                                  offset, 1, ENC_BIG_ENDIAN);
+    offset += 1;
+    return offset;
+}
+
+/*
  * IOAM Option Header
  *
       0                   1                   2                   3
@@ -2417,6 +2517,9 @@ dissect_opt_ioam(tvbuff_t *tvb, gint offset, packet_info *pinfo,
     case IP6IOAM_POT:
         break;
     case IP6IOAM_E2E:
+        break;
+    case IP6IOAM_AGGR:
+        offset = dissect_opt_ioam_aggr(tvb, offset, pinfo, opt_type_tree, opt_ti, opt_len);
         break;
     }
 
@@ -4779,6 +4882,86 @@ proto_register_ipv6(void)
                 FT_BYTES, BASE_NONE, NULL, 0x0,
                 NULL, HFILL }
         },
+        { &hf_ipv6_opt_ioam_aggr_ns,
+            { "Namespace ID", "ipv6.opt.ioam.aggr.ns",
+                FT_UINT16, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_flags,
+            { "Flags", "ipv6.opt.ioam.aggr.flags",
+                FT_UINT8, BASE_DEC, NULL, 0xF,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_flag_1,
+            { "Unsupported Aggregator", "ipv6.opt.ioam.aggr.flag.1",
+                FT_BOOLEAN, 4, NULL, 0x1,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_flag_2,
+            { "Unsupported Data Param", "ipv6.opt.ioam.aggr.flag.2",
+                FT_BOOLEAN, 4, NULL, 0x2,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_flag_3,
+            { "Unsupported Namespace", "ipv6.opt.ioam.aggr.flag.3",
+                FT_BOOLEAN, 4, NULL, 0x4,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_flag_4,
+            { "Other Error", "ipv6.opt.ioam.aggr.flag.4",
+                FT_BOOLEAN, 4, NULL, 0x8,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_reserved,
+            { "Reserved", "ipv6.opt.ioam.aggr.reserved",
+                FT_UINT16, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_data_param,
+            { "IOAM Data Param", "ipv6.opt.ioam.aggr.data_param",
+                FT_UINT24, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregator,
+            { "Aggregator", "ipv6.opt.ioam.aggr.aggregator",
+                FT_UINT8, BASE_DEC, NULL, 0xFF,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregator_sum,
+            { "SUM", "ipv6.opt.ioam.aggr.aggregator.sum",
+                FT_BOOLEAN, 8, NULL, 0x1,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregator_min,
+            { "MIN", "ipv6.opt.ioam.aggr.aggregator.min",
+                FT_BOOLEAN, 8, NULL, 0x2,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregator_max,
+            { "MAX", "ipv6.opt.ioam.aggr.aggregator.max",
+                FT_BOOLEAN, 8, NULL, 0x4,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregator_avg,
+            { "AVG", "ipv6.opt.ioam.aggr.aggregator.avg",
+                FT_BOOLEAN, 8, NULL, 0x8,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_aggregate,
+            { "Aggregate", "ipv6.opt.ioam.aggr.aggregate",
+                FT_UINT32, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_node_id,
+            { "Auxil-data Node-ID", "ipv6.opt.ioam.aggr.node_id",
+                FT_UINT24, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
+        { &hf_ipv6_opt_ioam_aggr_hop_count,
+            { "Hop Count", "ipv6.opt.ioam.aggr.hop_count",
+                FT_UINT8, BASE_DEC, NULL, 0x0,
+                NULL, HFILL }
+        },
         { &hf_ipv6_opt_tpf_information,
             { "TPF Information", "ipv6.opt.tpf_information",
                 FT_UINT32, BASE_HEX, NULL, 0x0,
@@ -5198,6 +5381,8 @@ proto_register_ipv6(void)
         &ett_ipv6_opt_dff_flags,
         &ett_ipv6_opt_ioam_trace_flags,
         &ett_ipv6_opt_ioam_trace_types,
+        &ett_ipv6_opt_ioam_aggr_flags,
+        &ett_ipv6_opt_ioam_aggr_aggregators,
         &ett_ipv6_fragment,
         &ett_ipv6_fragments
     };
