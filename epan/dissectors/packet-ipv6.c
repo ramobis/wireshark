@@ -4889,27 +4889,27 @@ proto_register_ipv6(void)
         },
         { &hf_ipv6_opt_ioam_aggr_flags,
             { "Flags", "ipv6.opt.ioam.aggr.flags",
-                FT_UINT8, BASE_DEC, NULL, 0xF,
+                FT_UINT8, BASE_DEC, NULL, 0xF0,
                 NULL, HFILL }
         },
         { &hf_ipv6_opt_ioam_aggr_flag_1,
             { "Unsupported Aggregator", "ipv6.opt.ioam.aggr.flag.1",
-                FT_BOOLEAN, 4, NULL, 0x1,
+                FT_BOOLEAN, 8, NULL, 0x10,
                 NULL, HFILL }
         },
         { &hf_ipv6_opt_ioam_aggr_flag_2,
             { "Unsupported Data Param", "ipv6.opt.ioam.aggr.flag.2",
-                FT_BOOLEAN, 4, NULL, 0x2,
+                FT_BOOLEAN, 8, NULL, 0x20,
                 NULL, HFILL }
         },
         { &hf_ipv6_opt_ioam_aggr_flag_3,
             { "Unsupported Namespace", "ipv6.opt.ioam.aggr.flag.3",
-                FT_BOOLEAN, 4, NULL, 0x4,
+                FT_BOOLEAN, 8, NULL, 0x40,
                 NULL, HFILL }
         },
         { &hf_ipv6_opt_ioam_aggr_flag_4,
             { "Other Error", "ipv6.opt.ioam.aggr.flag.4",
-                FT_BOOLEAN, 4, NULL, 0x8,
+                FT_BOOLEAN, 8, NULL, 0x80,
                 NULL, HFILL }
         },
         { &hf_ipv6_opt_ioam_aggr_reserved,
